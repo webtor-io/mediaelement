@@ -87,7 +87,7 @@ const HtmlMediaElement = {
 			events = mejs.html5media.events.concat(['click', 'mouseover', 'mouseout']).filter(e => e !== 'error'),
 			assignEvents = (eventName) => {
 				node.addEventListener(eventName, (e) => {
-					// Emmit an event only in case of the renderer is active at the moment
+					// Emit an event only in case the renderer is active at the moment
 					if (isActive) {
 						const event = createEvent(e.type, e.target);
 						mediaElement.dispatchEvent(event);
@@ -138,7 +138,7 @@ const HtmlMediaElement = {
 		// Check if it current source can be played; otherwise, load next until no more options are left
 		node.addEventListener('error', function (e) {
 			// Reload the source only in case of the renderer is active at the moment
-			if (e.target.error.code === 4 && isActive) {
+			if (e && e.target && e.target.error && e.target.error.code === 4 && isActive) {
 				if (index < total && mediaFiles[(index + 1)] !== undefined) {
 					node.src = mediaFiles[index++].src;
 					node.load();

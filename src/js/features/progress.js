@@ -86,11 +86,28 @@ Object.assign(MediaElementPlayer.prototype, {
 						player.startControlsTimer();
 					}
 
-					player.getElement(player.container).querySelector(`.${config.classPrefix}time-total`).focus();
+					var timeSlider = player.getElement(player.container).querySelector(`.${t.options.classPrefix}time-total`);
+					if (timeSlider) {
+						timeSlider.focus();
+					}
 
 					// 5%
 					const newTime = Math.max(player.currentTime - player.options.defaultSeekBackwardInterval(player), 0);
-					player.setCurrentTime(newTime);
+					
+					// pause to track current time
+					if (!player.paused) {
+						player.pause();
+					}
+
+					// make sure time is updated after 'pause' event is processed
+					setTimeout(function() {
+						player.setCurrentTime(newTime);
+					}, 0);
+
+					// start again to track new time
+					setTimeout(function() {
+						player.play();
+					}, 0);
 				}
 			}
 		},
@@ -107,11 +124,28 @@ Object.assign(MediaElementPlayer.prototype, {
 						player.startControlsTimer();
 					}
 
-					player.getElement(player.container).querySelector(`.${config.classPrefix}time-total`).focus();
+					var timeSlider = player.getElement(player.container).querySelector(`.${t.options.classPrefix}time-total`);
+					if (timeSlider) {
+						timeSlider.focus();
+					}
 
 					// 5%
 					const newTime = Math.min(player.currentTime + player.options.defaultSeekForwardInterval(player), player.duration);
-					player.setCurrentTime(newTime);
+					
+					// pause to track current time
+					if (!player.paused) {
+						player.pause();
+					}
+
+					// make sure time is updated after 'pause' event is processed
+					setTimeout(function() {
+						player.setCurrentTime(newTime);
+					}, 0);
+
+					// start again to track new time
+					setTimeout(function() {
+						player.play();
+					}, 0);
 				}
 			}
 		});
@@ -198,7 +232,7 @@ Object.assign(MediaElementPlayer.prototype, {
 
 					pos = x - offsetStyles.left;
 					percentage = (pos / width);
-					t.newTime = (percentage <= 0.02) ? 0 : percentage * t.getDuration();
+					t.newTime = percentage * t.getDuration();
 
 					// fake seek to where the mouse is
 					if (mouseIsDown && t.getCurrentTime() !== null && t.newTime.toFixed(4) !== t.getCurrentTime().toFixed(4)) {
@@ -281,7 +315,7 @@ Object.assign(MediaElementPlayer.prototype, {
 				if (media.paused) {
 					t.slider.setAttribute('aria-label', timeSliderText);
 					t.slider.setAttribute('aria-valuemin', 0);
-					t.slider.setAttribute('aria-valuemax', duration);
+					t.slider.setAttribute('aria-valuemax', isNaN(duration) ? 0 : duration);
 					t.slider.setAttribute('aria-valuenow', seconds);
 					t.slider.setAttribute('aria-valuetext', time);
 				} else {
@@ -392,18 +426,21 @@ Object.assign(MediaElementPlayer.prototype, {
 						return;
 				}
 
-				seekTime = seekTime < 0 ? 0 : (seekTime >= duration ? duration : Math.floor(seekTime));
+				seekTime = seekTime < 0 || isNaN(seekTime) ? 0 : (seekTime >= duration ? duration : Math.floor(seekTime));
 				lastKeyPressTime = new Date();
 				if (!startedPaused) {
 					player.pause();
 				}
 
+				// make sure time is updated after 'pause' event is processed
+				setTimeout(function() {
+					t.setCurrentTime(seekTime);
+				}, 0);
 
 				if (seekTime < t.getDuration() && !startedPaused) {
 					setTimeout(restartPlayer, 1100);
 				}
 
-				t.setCurrentTime(seekTime);
 				player.showControls();
 
 				e.preventDefault();
@@ -494,7 +531,7 @@ Object.assign(MediaElementPlayer.prototype, {
 					player.setCurrentRail(e);
 				}
 				updateSlider();
-			} else if (!broadcast || t.options.forceLive) {
+			} else if (!broadcast && t.options.forceLive) {
 				const label = document.createElement('span');
 				label.className = `${t.options.classPrefix}broadcast`;
 				label.innerText = i18n.t('mejs.live-broadcast');
