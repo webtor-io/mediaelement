@@ -8,7 +8,7 @@
  * Copyright 2010-2017, John Dyer (http://j.hn/)
  * License: MIT
  *
- */(function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof require=="function"&&require;if(!u&&a)return a(o,!0);if(i)return i(o,!0);var f=new Error("Cannot find module '"+o+"'");throw f.code="MODULE_NOT_FOUND",f}var l=n[o]={exports:{}};t[o][0].call(l.exports,function(e){var n=t[o][1][e];return s(n?n:e)},l,l.exports,e,t,n,r)}return n[o].exports}var i=typeof require=="function"&&require;for(var o=0;o<r.length;o++)s(r[o]);return s})({1:[function(_dereq_,module,exports){
+ */(function(){function r(e,n,t){function o(i,f){if(!n[i]){if(!e[i]){var c="function"==typeof require&&require;if(!f&&c)return c(i,!0);if(u)return u(i,!0);var a=new Error("Cannot find module '"+i+"'");throw a.code="MODULE_NOT_FOUND",a}var p=n[i]={exports:{}};e[i][0].call(p.exports,function(r){var n=e[i][1][r];return o(n||r)},p,p.exports,r,e,n,t)}return n[i].exports}for(var u="function"==typeof require&&require,i=0;i<t.length;i++)o(t[i]);return o}return r})()({1:[function(_dereq_,module,exports){
 
 },{}],2:[function(_dereq_,module,exports){
 (function (global){
@@ -49,6 +49,193 @@ module.exports = win;
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
 },{}],4:[function(_dereq_,module,exports){
+// shim for using process in browser
+var process = module.exports = {};
+
+// cached from whatever global is present so that test runners that stub it
+// don't break things.  But we need to wrap it in a try catch in case it is
+// wrapped in strict mode code which doesn't define any globals.  It's inside a
+// function because try/catches deoptimize in certain engines.
+
+var cachedSetTimeout;
+var cachedClearTimeout;
+
+function defaultSetTimout() {
+    throw new Error('setTimeout has not been defined');
+}
+function defaultClearTimeout () {
+    throw new Error('clearTimeout has not been defined');
+}
+(function () {
+    try {
+        if (typeof setTimeout === 'function') {
+            cachedSetTimeout = setTimeout;
+        } else {
+            cachedSetTimeout = defaultSetTimout;
+        }
+    } catch (e) {
+        cachedSetTimeout = defaultSetTimout;
+    }
+    try {
+        if (typeof clearTimeout === 'function') {
+            cachedClearTimeout = clearTimeout;
+        } else {
+            cachedClearTimeout = defaultClearTimeout;
+        }
+    } catch (e) {
+        cachedClearTimeout = defaultClearTimeout;
+    }
+} ())
+function runTimeout(fun) {
+    if (cachedSetTimeout === setTimeout) {
+        //normal enviroments in sane situations
+        return setTimeout(fun, 0);
+    }
+    // if setTimeout wasn't available but was latter defined
+    if ((cachedSetTimeout === defaultSetTimout || !cachedSetTimeout) && setTimeout) {
+        cachedSetTimeout = setTimeout;
+        return setTimeout(fun, 0);
+    }
+    try {
+        // when when somebody has screwed with setTimeout but no I.E. maddness
+        return cachedSetTimeout(fun, 0);
+    } catch(e){
+        try {
+            // When we are in I.E. but the script has been evaled so I.E. doesn't trust the global object when called normally
+            return cachedSetTimeout.call(null, fun, 0);
+        } catch(e){
+            // same as above but when it's a version of I.E. that must have the global object for 'this', hopfully our context correct otherwise it will throw a global error
+            return cachedSetTimeout.call(this, fun, 0);
+        }
+    }
+
+
+}
+function runClearTimeout(marker) {
+    if (cachedClearTimeout === clearTimeout) {
+        //normal enviroments in sane situations
+        return clearTimeout(marker);
+    }
+    // if clearTimeout wasn't available but was latter defined
+    if ((cachedClearTimeout === defaultClearTimeout || !cachedClearTimeout) && clearTimeout) {
+        cachedClearTimeout = clearTimeout;
+        return clearTimeout(marker);
+    }
+    try {
+        // when when somebody has screwed with setTimeout but no I.E. maddness
+        return cachedClearTimeout(marker);
+    } catch (e){
+        try {
+            // When we are in I.E. but the script has been evaled so I.E. doesn't  trust the global object when called normally
+            return cachedClearTimeout.call(null, marker);
+        } catch (e){
+            // same as above but when it's a version of I.E. that must have the global object for 'this', hopfully our context correct otherwise it will throw a global error.
+            // Some versions of I.E. have different rules for clearTimeout vs setTimeout
+            return cachedClearTimeout.call(this, marker);
+        }
+    }
+
+
+
+}
+var queue = [];
+var draining = false;
+var currentQueue;
+var queueIndex = -1;
+
+function cleanUpNextTick() {
+    if (!draining || !currentQueue) {
+        return;
+    }
+    draining = false;
+    if (currentQueue.length) {
+        queue = currentQueue.concat(queue);
+    } else {
+        queueIndex = -1;
+    }
+    if (queue.length) {
+        drainQueue();
+    }
+}
+
+function drainQueue() {
+    if (draining) {
+        return;
+    }
+    var timeout = runTimeout(cleanUpNextTick);
+    draining = true;
+
+    var len = queue.length;
+    while(len) {
+        currentQueue = queue;
+        queue = [];
+        while (++queueIndex < len) {
+            if (currentQueue) {
+                currentQueue[queueIndex].run();
+            }
+        }
+        queueIndex = -1;
+        len = queue.length;
+    }
+    currentQueue = null;
+    draining = false;
+    runClearTimeout(timeout);
+}
+
+process.nextTick = function (fun) {
+    var args = new Array(arguments.length - 1);
+    if (arguments.length > 1) {
+        for (var i = 1; i < arguments.length; i++) {
+            args[i - 1] = arguments[i];
+        }
+    }
+    queue.push(new Item(fun, args));
+    if (queue.length === 1 && !draining) {
+        runTimeout(drainQueue);
+    }
+};
+
+// v8 likes predictible objects
+function Item(fun, array) {
+    this.fun = fun;
+    this.array = array;
+}
+Item.prototype.run = function () {
+    this.fun.apply(null, this.array);
+};
+process.title = 'browser';
+process.browser = true;
+process.env = {};
+process.argv = [];
+process.version = ''; // empty string to avoid regexp issues
+process.versions = {};
+
+function noop() {}
+
+process.on = noop;
+process.addListener = noop;
+process.once = noop;
+process.off = noop;
+process.removeListener = noop;
+process.removeAllListeners = noop;
+process.emit = noop;
+process.prependListener = noop;
+process.prependOnceListener = noop;
+
+process.listeners = function (name) { return [] }
+
+process.binding = function (name) {
+    throw new Error('process.binding is not supported');
+};
+
+process.cwd = function () { return '/' };
+process.chdir = function (dir) {
+    throw new Error('process.chdir is not supported');
+};
+process.umask = function() { return 0; };
+
+},{}],5:[function(_dereq_,module,exports){
+(function (setImmediate){
 (function (root) {
 
   // Store setTimeout reference so promise-polyfill will be unaffected by
@@ -283,7 +470,87 @@ module.exports = win;
 
 })(this);
 
-},{}],5:[function(_dereq_,module,exports){
+}).call(this,_dereq_(6).setImmediate)
+},{"6":6}],6:[function(_dereq_,module,exports){
+(function (setImmediate,clearImmediate){
+var nextTick = _dereq_(4).nextTick;
+var apply = Function.prototype.apply;
+var slice = Array.prototype.slice;
+var immediateIds = {};
+var nextImmediateId = 0;
+
+// DOM APIs, for completeness
+
+exports.setTimeout = function() {
+  return new Timeout(apply.call(setTimeout, window, arguments), clearTimeout);
+};
+exports.setInterval = function() {
+  return new Timeout(apply.call(setInterval, window, arguments), clearInterval);
+};
+exports.clearTimeout =
+exports.clearInterval = function(timeout) { timeout.close(); };
+
+function Timeout(id, clearFn) {
+  this._id = id;
+  this._clearFn = clearFn;
+}
+Timeout.prototype.unref = Timeout.prototype.ref = function() {};
+Timeout.prototype.close = function() {
+  this._clearFn.call(window, this._id);
+};
+
+// Does not start the time, just sets up the members needed.
+exports.enroll = function(item, msecs) {
+  clearTimeout(item._idleTimeoutId);
+  item._idleTimeout = msecs;
+};
+
+exports.unenroll = function(item) {
+  clearTimeout(item._idleTimeoutId);
+  item._idleTimeout = -1;
+};
+
+exports._unrefActive = exports.active = function(item) {
+  clearTimeout(item._idleTimeoutId);
+
+  var msecs = item._idleTimeout;
+  if (msecs >= 0) {
+    item._idleTimeoutId = setTimeout(function onTimeout() {
+      if (item._onTimeout)
+        item._onTimeout();
+    }, msecs);
+  }
+};
+
+// That's not how node.js implements it but the exposed api is the same.
+exports.setImmediate = typeof setImmediate === "function" ? setImmediate : function(fn) {
+  var id = nextImmediateId++;
+  var args = arguments.length < 2 ? false : slice.call(arguments, 1);
+
+  immediateIds[id] = true;
+
+  nextTick(function onNextTick() {
+    if (immediateIds[id]) {
+      // fn.call() is faster so we optimize for the common use-case
+      // @see http://jsperf.com/call-apply-segu
+      if (args) {
+        fn.apply(null, args);
+      } else {
+        fn.call(null);
+      }
+      // Prevent ids from leaking
+      exports.clearImmediate(id);
+    }
+  });
+
+  return id;
+};
+
+exports.clearImmediate = typeof clearImmediate === "function" ? clearImmediate : function(id) {
+  delete immediateIds[id];
+};
+}).call(this,_dereq_(6).setImmediate,_dereq_(6).clearImmediate)
+},{"4":4,"6":6}],7:[function(_dereq_,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -292,13 +559,13 @@ Object.defineProperty(exports, "__esModule", {
 
 var _typeof = typeof Symbol === "function" && typeof Symbol.iterator === "symbol" ? function (obj) { return typeof obj; } : function (obj) { return obj && typeof Symbol === "function" && obj.constructor === Symbol && obj !== Symbol.prototype ? "symbol" : typeof obj; };
 
-var _mejs = _dereq_(7);
+var _mejs = _dereq_(9);
 
 var _mejs2 = _interopRequireDefault(_mejs);
 
-var _en = _dereq_(15);
+var _en = _dereq_(17);
 
-var _general = _dereq_(27);
+var _general = _dereq_(29);
 
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
@@ -550,7 +817,7 @@ if (typeof mejsL10n !== 'undefined') {
 
 exports.default = i18n;
 
-},{"15":15,"27":27,"7":7}],6:[function(_dereq_,module,exports){
+},{"17":17,"29":29,"9":9}],8:[function(_dereq_,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -567,17 +834,17 @@ var _document = _dereq_(2);
 
 var _document2 = _interopRequireDefault(_document);
 
-var _mejs = _dereq_(7);
+var _mejs = _dereq_(9);
 
 var _mejs2 = _interopRequireDefault(_mejs);
 
-var _general = _dereq_(27);
+var _general = _dereq_(29);
 
-var _media2 = _dereq_(28);
+var _media2 = _dereq_(30);
 
-var _renderer = _dereq_(8);
+var _renderer = _dereq_(10);
 
-var _constants = _dereq_(25);
+var _constants = _dereq_(27);
 
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
@@ -1002,7 +1269,7 @@ _mejs2.default.MediaElement = MediaElement;
 
 exports.default = MediaElement;
 
-},{"2":2,"25":25,"27":27,"28":28,"3":3,"7":7,"8":8}],7:[function(_dereq_,module,exports){
+},{"10":10,"2":2,"27":27,"29":29,"3":3,"30":30,"9":9}],9:[function(_dereq_,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -1034,7 +1301,7 @@ _window2.default.mejs = mejs;
 
 exports.default = mejs;
 
-},{"3":3}],8:[function(_dereq_,module,exports){
+},{"3":3}],10:[function(_dereq_,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -1046,7 +1313,7 @@ var _typeof = typeof Symbol === "function" && typeof Symbol.iterator === "symbol
 
 var _createClass = function () { function defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ("value" in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } } return function (Constructor, protoProps, staticProps) { if (protoProps) defineProperties(Constructor.prototype, protoProps); if (staticProps) defineProperties(Constructor, staticProps); return Constructor; }; }();
 
-var _mejs = _dereq_(7);
+var _mejs = _dereq_(9);
 
 var _mejs2 = _interopRequireDefault(_mejs);
 
@@ -1148,7 +1415,7 @@ var renderer = exports.renderer = new Renderer();
 
 _mejs2.default.Renderers = renderer;
 
-},{"7":7}],9:[function(_dereq_,module,exports){
+},{"9":9}],11:[function(_dereq_,module,exports){
 'use strict';
 
 var _window = _dereq_(3);
@@ -1159,23 +1426,23 @@ var _document = _dereq_(2);
 
 var _document2 = _interopRequireDefault(_document);
 
-var _i18n = _dereq_(5);
+var _i18n = _dereq_(7);
 
 var _i18n2 = _interopRequireDefault(_i18n);
 
-var _player = _dereq_(16);
+var _player = _dereq_(18);
 
 var _player2 = _interopRequireDefault(_player);
 
-var _constants = _dereq_(25);
+var _constants = _dereq_(27);
 
 var Features = _interopRequireWildcard(_constants);
 
-var _general = _dereq_(27);
+var _general = _dereq_(29);
 
-var _dom = _dereq_(26);
+var _dom = _dereq_(28);
 
-var _media = _dereq_(28);
+var _media = _dereq_(30);
 
 function _interopRequireWildcard(obj) { if (obj && obj.__esModule) { return obj; } else { var newObj = {}; if (obj != null) { for (var key in obj) { if (Object.prototype.hasOwnProperty.call(obj, key)) newObj[key] = obj[key]; } } newObj.default = obj; return newObj; } }
 
@@ -1311,6 +1578,20 @@ Object.assign(_player2.default.prototype, {
 			return;
 		}
 
+		if (Features.IS_ANDROID) {
+			var myVideo = t.media.originalNode;
+			if (typeof myVideo.webkitEnterFullscreen != "undefined") {
+				myVideo.webkitEnterFullscreen();
+				return;
+			} else if (typeof myVideo.webkitRequestFullscreen != "undefined") {
+				myVideo.webkitRequestFullscreen();
+				return;
+			} else if (typeof myVideo.mozRequestFullScreen != "undefined") {
+				myVideo.mozRequestFullScreen();
+				return;
+			}
+		}
+
 		(0, _dom.addClass)(_document2.default.documentElement, t.options.classPrefix + 'fullscreen');
 		(0, _dom.addClass)(t.getElement(t.container), t.options.classPrefix + 'container-fullscreen');
 
@@ -1383,9 +1664,8 @@ Object.assign(_player2.default.prototype, {
 		var zoomFactor = Math.min(screen.width / t.width, screen.height / t.height),
 		    captionText = t.getElement(t.container).querySelector('.' + t.options.classPrefix + 'captions-text');
 		if (captionText) {
-			captionText.style.fontSize = zoomFactor * 100 + '%';
+			captionText.style.fontSize = zoomFactor * 50 + '%';
 			captionText.style.lineHeight = 'normal';
-			t.getElement(t.container).querySelector('.' + t.options.classPrefix + 'captions-position').style.bottom = (screen.height - t.normalHeight) / 2 - t.getElement(t.controls).offsetHeight / 2 + zoomFactor + 15 + 'px';
 		}
 		var event = (0, _general.createEvent)('enteredfullscreen', t.getElement(t.container));
 		t.getElement(t.container).dispatchEvent(event);
@@ -1454,24 +1734,24 @@ Object.assign(_player2.default.prototype, {
 	}
 });
 
-},{"16":16,"2":2,"25":25,"26":26,"27":27,"28":28,"3":3,"5":5}],10:[function(_dereq_,module,exports){
+},{"18":18,"2":2,"27":27,"28":28,"29":29,"3":3,"30":30,"7":7}],12:[function(_dereq_,module,exports){
 'use strict';
 
 var _document = _dereq_(2);
 
 var _document2 = _interopRequireDefault(_document);
 
-var _player = _dereq_(16);
+var _player = _dereq_(18);
 
 var _player2 = _interopRequireDefault(_player);
 
-var _i18n = _dereq_(5);
+var _i18n = _dereq_(7);
 
 var _i18n2 = _interopRequireDefault(_i18n);
 
-var _general = _dereq_(27);
+var _general = _dereq_(29);
 
-var _dom = _dereq_(26);
+var _dom = _dereq_(28);
 
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
@@ -1547,26 +1827,26 @@ Object.assign(_player2.default.prototype, {
 	}
 });
 
-},{"16":16,"2":2,"26":26,"27":27,"5":5}],11:[function(_dereq_,module,exports){
+},{"18":18,"2":2,"28":28,"29":29,"7":7}],13:[function(_dereq_,module,exports){
 'use strict';
 
 var _document = _dereq_(2);
 
 var _document2 = _interopRequireDefault(_document);
 
-var _player = _dereq_(16);
+var _player = _dereq_(18);
 
 var _player2 = _interopRequireDefault(_player);
 
-var _i18n = _dereq_(5);
+var _i18n = _dereq_(7);
 
 var _i18n2 = _interopRequireDefault(_i18n);
 
-var _constants = _dereq_(25);
+var _constants = _dereq_(27);
 
-var _time = _dereq_(30);
+var _time = _dereq_(32);
 
-var _dom = _dereq_(26);
+var _dom = _dereq_(28);
 
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
@@ -2086,20 +2366,20 @@ Object.assign(_player2.default.prototype, {
 	}
 });
 
-},{"16":16,"2":2,"25":25,"26":26,"30":30,"5":5}],12:[function(_dereq_,module,exports){
+},{"18":18,"2":2,"27":27,"28":28,"32":32,"7":7}],14:[function(_dereq_,module,exports){
 'use strict';
 
 var _document = _dereq_(2);
 
 var _document2 = _interopRequireDefault(_document);
 
-var _player = _dereq_(16);
+var _player = _dereq_(18);
 
 var _player2 = _interopRequireDefault(_player);
 
-var _time = _dereq_(30);
+var _time = _dereq_(32);
 
-var _dom = _dereq_(26);
+var _dom = _dereq_(28);
 
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
@@ -2208,30 +2488,30 @@ Object.assign(_player2.default.prototype, {
 	}
 });
 
-},{"16":16,"2":2,"26":26,"30":30}],13:[function(_dereq_,module,exports){
+},{"18":18,"2":2,"28":28,"32":32}],15:[function(_dereq_,module,exports){
 'use strict';
 
 var _document = _dereq_(2);
 
 var _document2 = _interopRequireDefault(_document);
 
-var _mejs = _dereq_(7);
+var _mejs = _dereq_(9);
 
 var _mejs2 = _interopRequireDefault(_mejs);
 
-var _i18n = _dereq_(5);
+var _i18n = _dereq_(7);
 
 var _i18n2 = _interopRequireDefault(_i18n);
 
-var _player = _dereq_(16);
+var _player = _dereq_(18);
 
 var _player2 = _interopRequireDefault(_player);
 
-var _time = _dereq_(30);
+var _time = _dereq_(32);
 
-var _general = _dereq_(27);
+var _general = _dereq_(29);
 
-var _dom = _dereq_(26);
+var _dom = _dereq_(28);
 
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
@@ -2526,14 +2806,194 @@ Object.assign(_player2.default.prototype, {
 			t.checkForTracks();
 		}
 	},
+	isDataURI: function isDataURI(url) {
+		return url.match(/^data:(?:.+?\/.+?)?(?:;.+?=.+?)*(?:;base64)?,.*$/);
+	},
+	b64DecodeUnicode: function b64DecodeUnicode(str) {
+		return decodeURIComponent(atob(str).split('').map(function (c) {
+			return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+		}).join(''));
+	},
+	readSrc: function readSrc(src, callback) {
+		if (this.isDataURI(src)) {
+			var byteString = this.b64DecodeUnicode(src.split(',')[1]);
+			callback(byteString);
+		} else {
+			(0, _dom.ajax)(src, 'text', callback);
+		}
+	},
+	parseHLSPlaylist: function parseHLSPlaylist(srcUrl, src) {
+		var parentUrl = srcUrl.substring(0, srcUrl.lastIndexOf("/") + 1);
+		var fragments = [];
+		var lines = src.split("\n");
+		var current = 0;
+		var num = 0;
+		var fragment = { start: current };
+		var _iteratorNormalCompletion = true;
+		var _didIteratorError = false;
+		var _iteratorError = undefined;
+
+		try {
+			for (var _iterator = lines[Symbol.iterator](), _step; !(_iteratorNormalCompletion = (_step = _iterator.next()).done); _iteratorNormalCompletion = true) {
+				var l = _step.value;
+
+				var m = l.match('#EXTINF:([0-9\.]+),');
+				if (m) {
+					fragment.num = num;
+					fragment.end = fragment.start + parseFloat(m[1]);
+					num++;
+				}
+				if (l.match('^[^#]')) {
+					fragment.name = l;
+					fragment.src = parentUrl + fragment.name;
+				}
+				if (fragment.name !== undefined) {
+					fragments.push(fragment);
+					current = fragment.end;
+					fragment.content = function (f) {
+						var prom = null;
+						return function () {
+							if (prom === null) {
+								prom = new Promise(function (resolve, reject) {
+									(0, _dom.ajax)(f.src, 'text', resolve);
+								});
+							}
+							return prom;
+						};
+					}(fragment);
+					fragment = { start: current };
+				}
+			}
+		} catch (err) {
+			_didIteratorError = true;
+			_iteratorError = err;
+		} finally {
+			try {
+				if (!_iteratorNormalCompletion && _iterator.return) {
+					_iterator.return();
+				}
+			} finally {
+				if (_didIteratorError) {
+					throw _iteratorError;
+				}
+			}
+		}
+
+		return fragments;
+	},
 	loadTrack: function loadTrack(index) {
+		var _this = this;
+
 		var t = this,
 		    track = t.tracks[index];
 
 		if (track !== undefined && (track.src !== undefined || track.src !== "")) {
-			(0, _dom.ajax)(track.src, 'text', function (d) {
-				track.entries = typeof d === 'string' && /<tt\s+xml/ig.exec(d) ? _mejs2.default.TrackFormatParser.dfxp.parse(d) : _mejs2.default.TrackFormatParser.webvtt.parse(d);
+			this.readSrc(track.src, function (d) {
+				if (track.src.match(/\.m3u8/)) {
+					var fragments = _this.parseHLSPlaylist(track.src, d);
+					var empty = false;
+					track.getEntries = function (time, callback) {
+						if (empty) return;
+						var found = false;
 
+						var _loop = function _loop(f) {
+							if (time > f.start && time < f.end) {
+								found = true;
+								f.content().then(function (c) {
+									var entries = _mejs2.default.TrackFormatParser.webvtt.parse(c);
+									callback(entries);
+									for (var _index2 = 1; _index2 < 5; _index2++) {
+										var nextNum = f.num + _index2;
+										if (fragments[nextNum] !== undefined) {
+											fragments[nextNum].content();
+										}
+									}
+								});
+							}
+						};
+
+						var _iteratorNormalCompletion2 = true;
+						var _didIteratorError2 = false;
+						var _iteratorError2 = undefined;
+
+						try {
+							for (var _iterator2 = fragments[Symbol.iterator](), _step2; !(_iteratorNormalCompletion2 = (_step2 = _iterator2.next()).done); _iteratorNormalCompletion2 = true) {
+								var f = _step2.value;
+
+								_loop(f);
+							}
+						} catch (err) {
+							_didIteratorError2 = true;
+							_iteratorError2 = err;
+						} finally {
+							try {
+								if (!_iteratorNormalCompletion2 && _iterator2.return) {
+									_iterator2.return();
+								}
+							} finally {
+								if (_didIteratorError2) {
+									throw _iteratorError2;
+								}
+							}
+						}
+
+						if (!found) {
+							t.readSrc(track.src, function (d) {
+								fragments = t.parseHLSPlaylist(track.src, d);
+								if (fragments.length == 0) {
+									empty = true;
+								} else {
+									var _loop2 = function _loop2(f) {
+										if (time > f.start && time < f.end) {
+											found = true;
+											f.content().then(function (c) {
+												var entries = _mejs2.default.TrackFormatParser.webvtt.parse(c);
+												callback(entries);
+												for (var _index = 1; _index < 5; _index++) {
+													var nextNum = f.num + _index;
+													if (fragments[nextNum] !== undefined) {
+														fragments[nextNum].content();
+													}
+												}
+											});
+										}
+									};
+
+									var _iteratorNormalCompletion3 = true;
+									var _didIteratorError3 = false;
+									var _iteratorError3 = undefined;
+
+									try {
+										for (var _iterator3 = fragments[Symbol.iterator](), _step3; !(_iteratorNormalCompletion3 = (_step3 = _iterator3.next()).done); _iteratorNormalCompletion3 = true) {
+											var f = _step3.value;
+
+											_loop2(f);
+										}
+									} catch (err) {
+										_didIteratorError3 = true;
+										_iteratorError3 = err;
+									} finally {
+										try {
+											if (!_iteratorNormalCompletion3 && _iterator3.return) {
+												_iterator3.return();
+											}
+										} finally {
+											if (_didIteratorError3) {
+												throw _iteratorError3;
+											}
+										}
+									}
+								}
+							});
+						}
+						return null;
+					};
+				} else {
+					track.entries = typeof d === 'string' && /<tt\s+xml/ig.exec(d) ? _mejs2.default.TrackFormatParser.dfxp.parse(d) : _mejs2.default.TrackFormatParser.webvtt.parse(d);
+					track.getEntries = function (time, callback) {
+						return callback(track.entries);
+					};
+				}
 				track.isLoaded = true;
 				t.enableTrackButton(track);
 				t.loadNextTrack();
@@ -2647,15 +3107,19 @@ Object.assign(_player2.default.prototype, {
 		};
 
 		if (track !== null && track.isLoaded) {
-			var i = t.searchTrackPosition(track.entries, t.media.currentTime);
-			if (i > -1) {
-				t.captionsText.innerHTML = sanitize(track.entries[i].text);
-				t.captionsText.className = t.options.classPrefix + 'captions-text ' + (track.entries[i].identifier || '');
-				t.captions.style.display = '';
-				t.captions.style.height = '0px';
-				return;
-			}
-			t.captions.style.display = 'none';
+			track.getEntries(t.media.currentTime, function (entries) {
+				var entry = null;
+				var i = t.searchTrackPosition(entries, t.media.currentTime);
+				if (i > -1) entry = entries[i];
+				if (entry !== null) {
+					t.captionsText.innerHTML = sanitize(entry.text);
+					t.captionsText.className = t.options.classPrefix + 'captions-text ' + (entry.identifier || '');
+					t.captions.style.display = '';
+					t.captions.style.height = '0px';
+					return;
+				}
+				t.captions.style.display = 'none';
+			});
 		} else {
 			t.captions.style.display = 'none';
 		}
@@ -2667,7 +3131,7 @@ Object.assign(_player2.default.prototype, {
 		t.showSlide(0);
 	},
 	showSlide: function showSlide(index) {
-		var _this = this;
+		var _this2 = this;
 
 		var t = this;
 
@@ -2683,7 +3147,7 @@ Object.assign(_player2.default.prototype, {
 			var image = _document2.default.createElement('img');
 			image.src = url;
 			image.addEventListener('load', function () {
-				var self = _this,
+				var self = _this2,
 				    visible = (0, _dom.siblings)(self, function (el) {
 					return visible(el);
 				});
@@ -2970,26 +3434,26 @@ _mejs2.default.TrackFormatParser = {
 	}
 };
 
-},{"16":16,"2":2,"26":26,"27":27,"30":30,"5":5,"7":7}],14:[function(_dereq_,module,exports){
+},{"18":18,"2":2,"28":28,"29":29,"32":32,"7":7,"9":9}],16:[function(_dereq_,module,exports){
 'use strict';
 
 var _document = _dereq_(2);
 
 var _document2 = _interopRequireDefault(_document);
 
-var _player = _dereq_(16);
+var _player = _dereq_(18);
 
 var _player2 = _interopRequireDefault(_player);
 
-var _i18n = _dereq_(5);
+var _i18n = _dereq_(7);
 
 var _i18n2 = _interopRequireDefault(_i18n);
 
-var _constants = _dereq_(25);
+var _constants = _dereq_(27);
 
-var _general = _dereq_(27);
+var _general = _dereq_(29);
 
-var _dom = _dereq_(26);
+var _dom = _dereq_(28);
 
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
@@ -3338,7 +3802,7 @@ Object.assign(_player2.default.prototype, {
 	}
 });
 
-},{"16":16,"2":2,"25":25,"26":26,"27":27,"5":5}],15:[function(_dereq_,module,exports){
+},{"18":18,"2":2,"27":27,"28":28,"29":29,"7":7}],17:[function(_dereq_,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -3428,7 +3892,7 @@ var EN = exports.EN = {
 	'mejs.yiddish': 'Yiddish'
 };
 
-},{}],16:[function(_dereq_,module,exports){
+},{}],18:[function(_dereq_,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -3448,31 +3912,31 @@ var _document = _dereq_(2);
 
 var _document2 = _interopRequireDefault(_document);
 
-var _mejs = _dereq_(7);
+var _mejs = _dereq_(9);
 
 var _mejs2 = _interopRequireDefault(_mejs);
 
-var _mediaelement = _dereq_(6);
+var _mediaelement = _dereq_(8);
 
 var _mediaelement2 = _interopRequireDefault(_mediaelement);
 
-var _default = _dereq_(17);
+var _default = _dereq_(19);
 
 var _default2 = _interopRequireDefault(_default);
 
-var _i18n = _dereq_(5);
+var _i18n = _dereq_(7);
 
 var _i18n2 = _interopRequireDefault(_i18n);
 
-var _constants = _dereq_(25);
+var _constants = _dereq_(27);
 
-var _general = _dereq_(27);
+var _general = _dereq_(29);
 
-var _time = _dereq_(30);
+var _time = _dereq_(32);
 
-var _media = _dereq_(28);
+var _media = _dereq_(30);
 
-var _dom = _dereq_(26);
+var _dom = _dereq_(28);
 
 var dom = _interopRequireWildcard(_dom);
 
@@ -4413,9 +4877,9 @@ var MediaElementPlayer = function () {
 			    parentStyles = parent ? getComputedStyle(parent, null) : getComputedStyle(_document2.default.body, null),
 			    nativeWidth = function () {
 				if (t.isVideo) {
-					if (t.node.videoWidth && t.node.videoWidth > 0) {
+					if (t.node && t.node.videoWidth && t.node.videoWidth > 0) {
 						return t.node.videoWidth;
-					} else if (t.node.getAttribute('width')) {
+					} else if (t.node && t.node.getAttribute('width')) {
 						return t.node.getAttribute('width');
 					} else {
 						return t.options.defaultVideoWidth;
@@ -4426,9 +4890,9 @@ var MediaElementPlayer = function () {
 			}(),
 			    nativeHeight = function () {
 				if (t.isVideo) {
-					if (t.node.videoHeight && t.node.videoHeight > 0) {
+					if (t.node && t.node.videoHeight && t.node.videoHeight > 0) {
 						return t.node.videoHeight;
-					} else if (t.node.getAttribute('height')) {
+					} else if (t.node && t.node.getAttribute('height')) {
 						return t.node.getAttribute('height');
 					} else {
 						return t.options.defaultVideoHeight;
@@ -4443,7 +4907,7 @@ var MediaElementPlayer = function () {
 					return ratio;
 				}
 
-				if (t.node.videoWidth && t.node.videoWidth > 0 && t.node.videoHeight && t.node.videoHeight > 0) {
+				if (t.node && t.node.videoWidth && t.node.videoWidth > 0 && t.node.videoHeight && t.node.videoHeight > 0) {
 					ratio = t.height >= t.width ? t.node.videoWidth / t.node.videoHeight : t.node.videoHeight / t.node.videoWidth;
 				} else {
 					ratio = t.initialAspectRatio;
@@ -4474,7 +4938,7 @@ var MediaElementPlayer = function () {
 				newHeight = parentHeight;
 			}
 
-			if (t.getElement(t.container).parentNode.length > 0 && t.getElement(t.container).parentNode.tagName.toLowerCase() === 'body') {
+			if (t.getElement(t.container).parentNode && t.getElement(t.container).parentNode.length > 0 && t.getElement(t.container).parentNode.tagName.toLowerCase() === 'body') {
 				parentWidth = _window2.default.innerWidth || _document2.default.documentElement.clientWidth || _document2.default.body.clientWidth;
 				newHeight = _window2.default.innerHeight || _document2.default.documentElement.clientHeight || _document2.default.body.clientHeight;
 			}
@@ -4483,8 +4947,10 @@ var MediaElementPlayer = function () {
 				t.getElement(t.container).style.width = parentWidth + 'px';
 				t.getElement(t.container).style.height = newHeight + 'px';
 
-				t.node.style.width = '100%';
-				t.node.style.height = '100%';
+				if (t.node) {
+					t.node.style.width = '100%';
+					t.node.style.height = '100%';
+				}
 
 				if (t.isVideo && t.media.setSize) {
 					t.media.setSize(parentWidth, newHeight);
@@ -5306,7 +5772,7 @@ _mejs2.default.MediaElementPlayer = MediaElementPlayer;
 
 exports.default = MediaElementPlayer;
 
-},{"17":17,"2":2,"25":25,"26":26,"27":27,"28":28,"3":3,"30":30,"5":5,"6":6,"7":7}],17:[function(_dereq_,module,exports){
+},{"19":19,"2":2,"27":27,"28":28,"29":29,"3":3,"30":30,"32":32,"7":7,"8":8,"9":9}],19:[function(_dereq_,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -5483,18 +5949,18 @@ exports.default = DefaultPlayer;
 
 _window2.default.DefaultPlayer = DefaultPlayer;
 
-},{"3":3}],18:[function(_dereq_,module,exports){
+},{"3":3}],20:[function(_dereq_,module,exports){
 'use strict';
 
 var _window = _dereq_(3);
 
 var _window2 = _interopRequireDefault(_window);
 
-var _mejs = _dereq_(7);
+var _mejs = _dereq_(9);
 
 var _mejs2 = _interopRequireDefault(_mejs);
 
-var _player = _dereq_(16);
+var _player = _dereq_(18);
 
 var _player2 = _interopRequireDefault(_player);
 
@@ -5533,7 +5999,7 @@ if (typeof jQuery !== 'undefined') {
 	}
 })(_mejs2.default.$);
 
-},{"16":16,"3":3,"7":7}],19:[function(_dereq_,module,exports){
+},{"18":18,"3":3,"9":9}],21:[function(_dereq_,module,exports){
 'use strict';
 
 var _typeof = typeof Symbol === "function" && typeof Symbol.iterator === "symbol" ? function (obj) { return typeof obj; } : function (obj) { return obj && typeof Symbol === "function" && obj.constructor === Symbol && obj !== Symbol.prototype ? "symbol" : typeof obj; };
@@ -5542,19 +6008,19 @@ var _window = _dereq_(3);
 
 var _window2 = _interopRequireDefault(_window);
 
-var _mejs = _dereq_(7);
+var _mejs = _dereq_(9);
 
 var _mejs2 = _interopRequireDefault(_mejs);
 
-var _renderer = _dereq_(8);
+var _renderer = _dereq_(10);
 
-var _general = _dereq_(27);
+var _general = _dereq_(29);
 
-var _media = _dereq_(28);
+var _media = _dereq_(30);
 
-var _constants = _dereq_(25);
+var _constants = _dereq_(27);
 
-var _dom = _dereq_(26);
+var _dom = _dereq_(28);
 
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
@@ -5783,7 +6249,7 @@ _media.typeChecks.push(function (url) {
 
 _renderer.renderer.add(DashNativeRenderer);
 
-},{"25":25,"26":26,"27":27,"28":28,"3":3,"7":7,"8":8}],20:[function(_dereq_,module,exports){
+},{"10":10,"27":27,"28":28,"29":29,"3":3,"30":30,"9":9}],22:[function(_dereq_,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -5801,21 +6267,21 @@ var _document = _dereq_(2);
 
 var _document2 = _interopRequireDefault(_document);
 
-var _mejs = _dereq_(7);
+var _mejs = _dereq_(9);
 
 var _mejs2 = _interopRequireDefault(_mejs);
 
-var _i18n = _dereq_(5);
+var _i18n = _dereq_(7);
 
 var _i18n2 = _interopRequireDefault(_i18n);
 
-var _renderer = _dereq_(8);
+var _renderer = _dereq_(10);
 
-var _general = _dereq_(27);
+var _general = _dereq_(29);
 
-var _constants = _dereq_(25);
+var _constants = _dereq_(27);
 
-var _media = _dereq_(28);
+var _media = _dereq_(30);
 
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
@@ -6225,7 +6691,7 @@ if (hasFlash) {
 	_renderer.renderer.add(FlashMediaElementAudioOggRenderer);
 }
 
-},{"2":2,"25":25,"27":27,"28":28,"3":3,"5":5,"7":7,"8":8}],21:[function(_dereq_,module,exports){
+},{"10":10,"2":2,"27":27,"29":29,"3":3,"30":30,"7":7,"9":9}],23:[function(_dereq_,module,exports){
 'use strict';
 
 var _typeof = typeof Symbol === "function" && typeof Symbol.iterator === "symbol" ? function (obj) { return typeof obj; } : function (obj) { return obj && typeof Symbol === "function" && obj.constructor === Symbol && obj !== Symbol.prototype ? "symbol" : typeof obj; };
@@ -6234,19 +6700,19 @@ var _window = _dereq_(3);
 
 var _window2 = _interopRequireDefault(_window);
 
-var _mejs = _dereq_(7);
+var _mejs = _dereq_(9);
 
 var _mejs2 = _interopRequireDefault(_mejs);
 
-var _renderer = _dereq_(8);
+var _renderer = _dereq_(10);
 
-var _general = _dereq_(27);
+var _general = _dereq_(29);
 
-var _constants = _dereq_(25);
+var _constants = _dereq_(27);
 
-var _media = _dereq_(28);
+var _media = _dereq_(30);
 
-var _dom = _dereq_(26);
+var _dom = _dereq_(28);
 
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
@@ -6474,7 +6940,7 @@ _media.typeChecks.push(function (url) {
 
 _renderer.renderer.add(FlvNativeRenderer);
 
-},{"25":25,"26":26,"27":27,"28":28,"3":3,"7":7,"8":8}],22:[function(_dereq_,module,exports){
+},{"10":10,"27":27,"28":28,"29":29,"3":3,"30":30,"9":9}],24:[function(_dereq_,module,exports){
 'use strict';
 
 var _typeof = typeof Symbol === "function" && typeof Symbol.iterator === "symbol" ? function (obj) { return typeof obj; } : function (obj) { return obj && typeof Symbol === "function" && obj.constructor === Symbol && obj !== Symbol.prototype ? "symbol" : typeof obj; };
@@ -6483,19 +6949,19 @@ var _window = _dereq_(3);
 
 var _window2 = _interopRequireDefault(_window);
 
-var _mejs = _dereq_(7);
+var _mejs = _dereq_(9);
 
 var _mejs2 = _interopRequireDefault(_mejs);
 
-var _renderer = _dereq_(8);
+var _renderer = _dereq_(10);
 
-var _general = _dereq_(27);
+var _general = _dereq_(29);
 
-var _constants = _dereq_(25);
+var _constants = _dereq_(27);
 
-var _media = _dereq_(28);
+var _media = _dereq_(30);
 
-var _dom = _dereq_(26);
+var _dom = _dereq_(28);
 
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
@@ -6763,7 +7229,7 @@ _media.typeChecks.push(function (url) {
 
 _renderer.renderer.add(HlsNativeRenderer);
 
-},{"25":25,"26":26,"27":27,"28":28,"3":3,"7":7,"8":8}],23:[function(_dereq_,module,exports){
+},{"10":10,"27":27,"28":28,"29":29,"3":3,"30":30,"9":9}],25:[function(_dereq_,module,exports){
 'use strict';
 
 var _window = _dereq_(3);
@@ -6774,15 +7240,15 @@ var _document = _dereq_(2);
 
 var _document2 = _interopRequireDefault(_document);
 
-var _mejs = _dereq_(7);
+var _mejs = _dereq_(9);
 
 var _mejs2 = _interopRequireDefault(_mejs);
 
-var _renderer = _dereq_(8);
+var _renderer = _dereq_(10);
 
-var _general = _dereq_(27);
+var _general = _dereq_(29);
 
-var _constants = _dereq_(25);
+var _constants = _dereq_(27);
 
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
@@ -6910,7 +7376,7 @@ _window2.default.HtmlMediaElement = _mejs2.default.HtmlMediaElement = HtmlMediaE
 
 _renderer.renderer.add(HtmlMediaElement);
 
-},{"2":2,"25":25,"27":27,"3":3,"7":7,"8":8}],24:[function(_dereq_,module,exports){
+},{"10":10,"2":2,"27":27,"29":29,"3":3,"9":9}],26:[function(_dereq_,module,exports){
 'use strict';
 
 var _window = _dereq_(3);
@@ -6921,17 +7387,17 @@ var _document = _dereq_(2);
 
 var _document2 = _interopRequireDefault(_document);
 
-var _mejs = _dereq_(7);
+var _mejs = _dereq_(9);
 
 var _mejs2 = _interopRequireDefault(_mejs);
 
-var _renderer = _dereq_(8);
+var _renderer = _dereq_(10);
 
-var _general = _dereq_(27);
+var _general = _dereq_(29);
 
-var _media = _dereq_(28);
+var _media = _dereq_(30);
 
-var _dom = _dereq_(26);
+var _dom = _dereq_(28);
 
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
@@ -7439,7 +7905,7 @@ _media.typeChecks.push(function (url) {
 
 _renderer.renderer.add(YouTubeIframeRenderer);
 
-},{"2":2,"26":26,"27":27,"28":28,"3":3,"7":7,"8":8}],25:[function(_dereq_,module,exports){
+},{"10":10,"2":2,"28":28,"29":29,"3":3,"30":30,"9":9}],27:[function(_dereq_,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -7455,7 +7921,7 @@ var _document = _dereq_(2);
 
 var _document2 = _interopRequireDefault(_document);
 
-var _mejs = _dereq_(7);
+var _mejs = _dereq_(9);
 
 var _mejs2 = _interopRequireDefault(_mejs);
 
@@ -7625,7 +8091,7 @@ _mejs2.default.Features.isFullScreen = isFullScreen;
 _mejs2.default.Features.requestFullScreen = requestFullScreen;
 _mejs2.default.Features.cancelFullScreen = cancelFullScreen;
 
-},{"2":2,"3":3,"7":7}],26:[function(_dereq_,module,exports){
+},{"2":2,"3":3,"9":9}],28:[function(_dereq_,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -7649,7 +8115,7 @@ var _document = _dereq_(2);
 
 var _document2 = _interopRequireDefault(_document);
 
-var _mejs = _dereq_(7);
+var _mejs = _dereq_(9);
 
 var _mejs2 = _interopRequireDefault(_mejs);
 
@@ -7783,6 +8249,7 @@ function visible(elem) {
 
 function ajax(url, dataType, success, error) {
 	var xhr = _window2.default.XMLHttpRequest ? new XMLHttpRequest() : new ActiveXObject('Microsoft.XMLHTTP');
+	xhr.withCredentials = true;
 
 	var type = 'application/x-www-form-urlencoded; charset=UTF-8',
 	    completed = false,
@@ -7854,7 +8321,7 @@ _mejs2.default.Utils.visible = visible;
 _mejs2.default.Utils.ajax = ajax;
 _mejs2.default.Utils.loadScript = loadScript;
 
-},{"2":2,"3":3,"7":7}],27:[function(_dereq_,module,exports){
+},{"2":2,"3":3,"9":9}],29:[function(_dereq_,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -7868,7 +8335,7 @@ exports.createEvent = createEvent;
 exports.isNodeAfter = isNodeAfter;
 exports.isString = isString;
 
-var _mejs = _dereq_(7);
+var _mejs = _dereq_(9);
 
 var _mejs2 = _interopRequireDefault(_mejs);
 
@@ -7990,7 +8457,7 @@ _mejs2.default.Utils.createEvent = createEvent;
 _mejs2.default.Utils.isNodeAfter = isNodeAfter;
 _mejs2.default.Utils.isString = isString;
 
-},{"7":7}],28:[function(_dereq_,module,exports){
+},{"9":9}],30:[function(_dereq_,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -8004,11 +8471,11 @@ exports.getTypeFromFile = getTypeFromFile;
 exports.getExtension = getExtension;
 exports.normalizeExtension = normalizeExtension;
 
-var _mejs = _dereq_(7);
+var _mejs = _dereq_(9);
 
 var _mejs2 = _interopRequireDefault(_mejs);
 
-var _general = _dereq_(27);
+var _general = _dereq_(29);
 
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
@@ -8113,14 +8580,14 @@ _mejs2.default.Utils.getTypeFromFile = getTypeFromFile;
 _mejs2.default.Utils.getExtension = getExtension;
 _mejs2.default.Utils.normalizeExtension = normalizeExtension;
 
-},{"27":27,"7":7}],29:[function(_dereq_,module,exports){
+},{"29":29,"9":9}],31:[function(_dereq_,module,exports){
 'use strict';
 
 var _document = _dereq_(2);
 
 var _document2 = _interopRequireDefault(_document);
 
-var _promisePolyfill = _dereq_(4);
+var _promisePolyfill = _dereq_(5);
 
 var _promisePolyfill2 = _interopRequireDefault(_promisePolyfill);
 
@@ -8266,7 +8733,7 @@ if (!window.Promise) {
 	}
 })(window.Node || window.Element);
 
-},{"2":2,"4":4}],30:[function(_dereq_,module,exports){
+},{"2":2,"5":5}],32:[function(_dereq_,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -8278,7 +8745,7 @@ exports.timeCodeToSeconds = timeCodeToSeconds;
 exports.calculateTimeFormat = calculateTimeFormat;
 exports.convertSMPTEtoSeconds = convertSMPTEtoSeconds;
 
-var _mejs = _dereq_(7);
+var _mejs = _dereq_(9);
 
 var _mejs2 = _interopRequireDefault(_mejs);
 
@@ -8519,4 +8986,4 @@ _mejs2.default.Utils.timeCodeToSeconds = timeCodeToSeconds;
 _mejs2.default.Utils.calculateTimeFormat = calculateTimeFormat;
 _mejs2.default.Utils.convertSMPTEtoSeconds = convertSMPTEtoSeconds;
 
-},{"7":7}]},{},[29,6,5,15,23,20,19,21,22,24,16,18,17,9,10,11,12,13,14]);
+},{"9":9}]},{},[31,8,7,17,25,22,21,23,24,26,18,20,19,11,12,13,14,15,16]);

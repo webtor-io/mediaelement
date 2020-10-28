@@ -209,6 +209,24 @@ Object.assign(MediaElementPlayer.prototype, {
 			return;
 		}
 
+		if (Features.IS_ANDROID) {
+			// https://stackoverflow.com/a/24403519
+			var myVideo = t.media.originalNode;
+			if (typeof(myVideo.webkitEnterFullscreen) != "undefined") {
+				// This is for Android Stock.
+				myVideo.webkitEnterFullscreen();
+				return;
+			} else if (typeof(myVideo.webkitRequestFullscreen)  != "undefined") {
+				// This is for Chrome.
+				myVideo.webkitRequestFullscreen();
+				return;
+			} else if (typeof(myVideo.mozRequestFullScreen)  != "undefined") {
+				myVideo.mozRequestFullScreen();
+				return;
+			}
+
+		}
+
 		// set it to not show scroll bars so 100% will work
 		addClass(document.documentElement, `${t.options.classPrefix}fullscreen`);
 		addClass(t.getElement(t.container), `${t.options.classPrefix}container-fullscreen`);
@@ -292,10 +310,10 @@ Object.assign(MediaElementPlayer.prototype, {
 			captionText = t.getElement(t.container).querySelector(`.${t.options.classPrefix}captions-text`)
 		;
 		if (captionText) {
-			captionText.style.fontSize = `${(zoomFactor * 100)}%`;
+			captionText.style.fontSize = `${(zoomFactor * 50)}%`;
 			captionText.style.lineHeight = 'normal';
-			t.getElement(t.container).querySelector(`.${t.options.classPrefix}captions-position`).style.bottom =
-				`${(((screen.height - t.normalHeight) / 2) - (t.getElement(t.controls).offsetHeight / 2) + zoomFactor + 15)}px`;
+			// t.getElement(t.container).querySelector(`.${t.options.classPrefix}captions-position`).style.bottom =
+			// 	`${(((screen.height - t.normalHeight) / 2) - (t.getElement(t.controls).offsetHeight / 2) + zoomFactor + 15)}px`;
 		}
 		const event = createEvent('enteredfullscreen', t.getElement(t.container));
 		t.getElement(t.container).dispatchEvent(event);

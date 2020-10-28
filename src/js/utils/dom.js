@@ -124,6 +124,7 @@ export function visible (elem) {
 
 export function ajax (url, dataType, success, error) {
 	const xhr = window.XMLHttpRequest ? new XMLHttpRequest() : new ActiveXObject('Microsoft.XMLHTTP');
+	xhr.withCredentials = true;
 
 	let
 		type = 'application/x-www-form-urlencoded; charset=UTF-8',
