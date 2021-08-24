@@ -882,11 +882,13 @@ var MediaElement = function MediaElement(idOrNode, options, sources) {
 						}
 					});
 				}
+				return response;
 			} else {
-				t.mediaElement.renderer[methodName](args);
+				return t.mediaElement.renderer[methodName](args);
 			}
 		} catch (e) {
 			t.mediaElement.generateError(e, mediaFiles);
+			throw e;
 		}
 	},
 	    assignMethods = function assignMethods(methodName) {
@@ -897,13 +899,14 @@ var MediaElement = function MediaElement(idOrNode, options, sources) {
 
 			if (t.mediaElement.renderer !== undefined && t.mediaElement.renderer !== null && typeof t.mediaElement.renderer[methodName] === 'function') {
 				if (t.mediaElement.promises.length) {
-					Promise.all(t.mediaElement.promises).then(function () {
-						triggerAction(methodName, args);
+					return Promise.all(t.mediaElement.promises).then(function () {
+						return triggerAction(methodName, args);
 					}).catch(function (e) {
 						t.mediaElement.generateError(e, mediaFiles);
+						return Promise.reject(e);
 					});
 				} else {
-					triggerAction(methodName, args);
+					return triggerAction(methodName, args);
 				}
 			}
 			return null;
@@ -3496,6 +3499,7 @@ function visible(elem) {
 
 function ajax(url, dataType, success, error) {
 	var xhr = _window2.default.XMLHttpRequest ? new XMLHttpRequest() : new ActiveXObject('Microsoft.XMLHTTP');
+	xhr.withCredentials = true;
 
 	var type = 'application/x-www-form-urlencoded; charset=UTF-8',
 	    completed = false,

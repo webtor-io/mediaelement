@@ -1049,9 +1049,9 @@ class MediaElementPlayer {
 			parentStyles = parent ? getComputedStyle(parent, null) : getComputedStyle(document.body, null),
 			nativeWidth = (() => {
 				if (t.isVideo) {
-					if (t.node.videoWidth && t.node.videoWidth > 0) {
+					if (t.node && t.node.videoWidth && t.node.videoWidth > 0) {
 						return t.node.videoWidth;
-					} else if (t.node.getAttribute('width')) {
+					} else if (t.node && t.node.getAttribute('width')) {
 						return t.node.getAttribute('width');
 					} else {
 						return t.options.defaultVideoWidth;
@@ -1062,9 +1062,9 @@ class MediaElementPlayer {
 			})(),
 			nativeHeight = (() => {
 				if (t.isVideo) {
-					if (t.node.videoHeight && t.node.videoHeight > 0) {
+					if (t.node && t.node.videoHeight && t.node.videoHeight > 0) {
 						return t.node.videoHeight;
-					} else if (t.node.getAttribute('height')) {
+					} else if (t.node && t.node.getAttribute('height')) {
 						return t.node.getAttribute('height');
 					} else {
 						return t.options.defaultVideoHeight;
@@ -1083,7 +1083,7 @@ class MediaElementPlayer {
 					return ratio;
 				}
 
-				if (t.node.videoWidth && t.node.videoWidth > 0 && t.node.videoHeight && t.node.videoHeight > 0) {
+				if (t.node && t.node.videoWidth && t.node.videoWidth > 0 && t.node.videoHeight && t.node.videoHeight > 0) {
 					ratio = (t.height >= t.width) ? t.node.videoWidth / t.node.videoHeight :
 						t.node.videoHeight / t.node.videoWidth;
 				} else {
@@ -1120,7 +1120,7 @@ class MediaElementPlayer {
 			newHeight = parentHeight;
 		}
 
-		if (t.getElement(t.container).parentNode.length > 0 && t.getElement(t.container).parentNode.tagName.toLowerCase() === 'body') {
+		if (t.getElement(t.container).parentNode && t.getElement(t.container).parentNode.length > 0 && t.getElement(t.container).parentNode.tagName.toLowerCase() === 'body') {
 			parentWidth = window.innerWidth || document.documentElement.clientWidth || document.body.clientWidth;
 			newHeight = window.innerHeight || document.documentElement.clientHeight || document.body.clientHeight;
 		}
@@ -1131,9 +1131,11 @@ class MediaElementPlayer {
 			t.getElement(t.container).style.width = `${parentWidth}px`;
 			t.getElement(t.container).style.height = `${newHeight}px`;
 
-			// set native <video> or <audio> and shims
-			t.node.style.width = '100%';
-			t.node.style.height = '100%';
+			if (t.node) {
+				// set native <video> or <audio> and shims
+				t.node.style.width = '100%';
+				t.node.style.height = '100%';
+			}
 
 			// if shim is ready, send the size to the embedded plugin
 			if (t.isVideo && t.media.setSize) {
@@ -1573,7 +1575,7 @@ class MediaElementPlayer {
 		loading.style.display = 'none'; // start out hidden
 		loading.className = `${t.options.classPrefix}overlay ${t.options.classPrefix}layer`;
 		loading.innerHTML = `<div class="${t.options.classPrefix}overlay-loading">` +
-			`<span class="${t.options.classPrefix}overlay-loading-bg-img"></span>` +
+			`<div class="showbox"><div class="loader"><svg class="circular" viewBox="25 25 50 50"><circle class="path" cx="50" cy="50" r="20" fill="none" stroke-width="2" stroke-miterlimit="10"/></svg></div></div>` +
 			`</div>`;
 		layers.appendChild(loading);
 

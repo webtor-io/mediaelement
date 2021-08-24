@@ -456,7 +456,7 @@ Object.assign(MediaElementPlayer.prototype, {
 		for (let i = 0, total = events.length; i < total; i++) {
 			t.slider.addEventListener(events[i], (e) => {
 				t.forcedHandlePause = false;
-				if (t.getDuration() !== Infinity) {
+				if (t.getDuration() !== Infinity && t.newTime < player.proxy.getOriginalDuration()) {
 					// only handle left clicks or touch
 					if (e.which === 1 || e.which === 0) {
 						if (!t.paused) {

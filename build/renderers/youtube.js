@@ -891,6 +891,7 @@ function visible(elem) {
 
 function ajax(url, dataType, success, error) {
 	var xhr = _window2.default.XMLHttpRequest ? new XMLHttpRequest() : new ActiveXObject('Microsoft.XMLHTTP');
+	xhr.withCredentials = true;
 
 	var type = 'application/x-www-form-urlencoded; charset=UTF-8',
 	    completed = false,

@@ -882,11 +882,13 @@ var MediaElement = function MediaElement(idOrNode, options, sources) {
 						}
 					});
 				}
+				return response;
 			} else {
-				t.mediaElement.renderer[methodName](args);
+				return t.mediaElement.renderer[methodName](args);
 			}
 		} catch (e) {
 			t.mediaElement.generateError(e, mediaFiles);
+			throw e;
 		}
 	},
 	    assignMethods = function assignMethods(methodName) {
@@ -897,13 +899,14 @@ var MediaElement = function MediaElement(idOrNode, options, sources) {
 
 			if (t.mediaElement.renderer !== undefined && t.mediaElement.renderer !== null && typeof t.mediaElement.renderer[methodName] === 'function') {
 				if (t.mediaElement.promises.length) {
-					Promise.all(t.mediaElement.promises).then(function () {
-						triggerAction(methodName, args);
+					return Promise.all(t.mediaElement.promises).then(function () {
+						return triggerAction(methodName, args);
 					}).catch(function (e) {
 						t.mediaElement.generateError(e, mediaFiles);
+						return Promise.reject(e);
 					});
 				} else {
-					triggerAction(methodName, args);
+					return triggerAction(methodName, args);
 				}
 			}
 			return null;
@@ -1307,9 +1310,25 @@ Object.assign(_player2.default.prototype, {
 			return;
 		}
 
+		t.getElement(t.container).dispatchEvent((0, _general.createEvent)('enteringfullscreen', t.getElement(t.container)));
+
 		if (t.options.useFakeFullscreen === false && (Features.IS_IOS || Features.IS_SAFARI) && Features.HAS_IOS_FULLSCREEN && typeof t.media.originalNode.webkitEnterFullscreen === 'function' && t.media.originalNode.canPlayType((0, _media.getTypeFromFile)(t.media.getSrc()))) {
 			t.media.originalNode.webkitEnterFullscreen();
 			return;
+		}
+
+		if (Features.IS_ANDROID) {
+			var myVideo = t.media.originalNode;
+			if (typeof myVideo.webkitEnterFullscreen != "undefined") {
+				myVideo.webkitEnterFullscreen();
+				return;
+			} else if (typeof myVideo.webkitRequestFullscreen != "undefined") {
+				myVideo.webkitRequestFullscreen();
+				return;
+			} else if (typeof myVideo.mozRequestFullScreen != "undefined") {
+				myVideo.mozRequestFullScreen();
+				return;
+			}
 		}
 
 		(0, _dom.addClass)(_document2.default.documentElement, t.options.classPrefix + 'fullscreen');
@@ -1384,9 +1403,8 @@ Object.assign(_player2.default.prototype, {
 		var zoomFactor = Math.min(screen.width / t.width, screen.height / t.height),
 		    captionText = t.getElement(t.container).querySelector('.' + t.options.classPrefix + 'captions-text');
 		if (captionText) {
-			captionText.style.fontSize = zoomFactor * 100 + '%';
+			captionText.style.fontSize = zoomFactor * 50 + '%';
 			captionText.style.lineHeight = 'normal';
-			t.getElement(t.container).querySelector('.' + t.options.classPrefix + 'captions-position').style.bottom = (screen.height - t.normalHeight) / 2 - t.getElement(t.controls).offsetHeight / 2 + zoomFactor + 15 + 'px';
 		}
 		var event = (0, _general.createEvent)('enteredfullscreen', t.getElement(t.container));
 		t.getElement(t.container).dispatchEvent(event);
@@ -1927,7 +1945,7 @@ Object.assign(_player2.default.prototype, {
 		for (var i = 0, total = events.length; i < total; i++) {
 			t.slider.addEventListener(events[i], function (e) {
 				t.forcedHandlePause = false;
-				if (t.getDuration() !== Infinity) {
+				if (t.getDuration() !== Infinity && t.newTime < player.proxy.getOriginalDuration()) {
 					if (e.which === 1 || e.which === 0) {
 						if (!t.paused) {
 							t.pause();
@@ -2558,14 +2576,194 @@ Object.assign(_player2.default.prototype, {
 			t.checkForTracks();
 		}
 	},
+	isDataURI: function isDataURI(url) {
+		return url.match(/^data:(?:.+?\/.+?)?(?:;.+?=.+?)*(?:;base64)?,.*$/);
+	},
+	b64DecodeUnicode: function b64DecodeUnicode(str) {
+		return decodeURIComponent(atob(str).split('').map(function (c) {
+			return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+		}).join(''));
+	},
+	readSrc: function readSrc(src, callback) {
+		if (this.isDataURI(src)) {
+			var byteString = this.b64DecodeUnicode(src.split(',')[1]);
+			callback(byteString);
+		} else {
+			(0, _dom.ajax)(src, 'text', callback);
+		}
+	},
+	parseHLSPlaylist: function parseHLSPlaylist(srcUrl, src) {
+		var parentUrl = srcUrl.substring(0, srcUrl.lastIndexOf("/") + 1);
+		var fragments = [];
+		var lines = src.split("\n");
+		var current = 0;
+		var num = 0;
+		var fragment = { start: current };
+		var _iteratorNormalCompletion = true;
+		var _didIteratorError = false;
+		var _iteratorError = undefined;
+
+		try {
+			for (var _iterator = lines[Symbol.iterator](), _step; !(_iteratorNormalCompletion = (_step = _iterator.next()).done); _iteratorNormalCompletion = true) {
+				var l = _step.value;
+
+				var m = l.match('#EXTINF:([0-9\.]+),');
+				if (m) {
+					fragment.num = num;
+					fragment.end = fragment.start + parseFloat(m[1]);
+					num++;
+				}
+				if (l.match('^[^#]')) {
+					fragment.name = l;
+					fragment.src = parentUrl + fragment.name;
+				}
+				if (fragment.name !== undefined) {
+					fragments.push(fragment);
+					current = fragment.end;
+					fragment.content = function (f) {
+						var prom = null;
+						return function () {
+							if (prom === null) {
+								prom = new Promise(function (resolve) {
+									(0, _dom.ajax)(f.src, 'text', resolve);
+								});
+							}
+							return prom;
+						};
+					}(fragment);
+					fragment = { start: current };
+				}
+			}
+		} catch (err) {
+			_didIteratorError = true;
+			_iteratorError = err;
+		} finally {
+			try {
+				if (!_iteratorNormalCompletion && _iterator.return) {
+					_iterator.return();
+				}
+			} finally {
+				if (_didIteratorError) {
+					throw _iteratorError;
+				}
+			}
+		}
+
+		return fragments;
+	},
 	loadTrack: function loadTrack(index) {
+		var _this = this;
+
 		var t = this,
 		    track = t.tracks[index];
 
 		if (track !== undefined && (track.src !== undefined || track.src !== "")) {
-			(0, _dom.ajax)(track.src, 'text', function (d) {
-				track.entries = typeof d === 'string' && /<tt\s+xml/ig.exec(d) ? _mejs2.default.TrackFormatParser.dfxp.parse(d) : _mejs2.default.TrackFormatParser.webvtt.parse(d);
+			this.readSrc(track.src, function (d) {
+				if (track.src.match(/\.m3u8/)) {
+					var fragments = _this.parseHLSPlaylist(track.src, d);
+					var empty = false;
+					track.getEntries = function (time, callback) {
+						if (empty) return;
+						var found = false;
 
+						var _loop = function _loop(f) {
+							if (time > f.start && time < f.end) {
+								found = true;
+								f.content().then(function (c) {
+									var entries = _mejs2.default.TrackFormatParser.webvtt.parse(c);
+									callback(entries);
+									for (var _index2 = 1; _index2 < 5; _index2++) {
+										var nextNum = f.num + _index2;
+										if (fragments[nextNum] !== undefined) {
+											fragments[nextNum].content();
+										}
+									}
+								});
+							}
+						};
+
+						var _iteratorNormalCompletion2 = true;
+						var _didIteratorError2 = false;
+						var _iteratorError2 = undefined;
+
+						try {
+							for (var _iterator2 = fragments[Symbol.iterator](), _step2; !(_iteratorNormalCompletion2 = (_step2 = _iterator2.next()).done); _iteratorNormalCompletion2 = true) {
+								var f = _step2.value;
+
+								_loop(f);
+							}
+						} catch (err) {
+							_didIteratorError2 = true;
+							_iteratorError2 = err;
+						} finally {
+							try {
+								if (!_iteratorNormalCompletion2 && _iterator2.return) {
+									_iterator2.return();
+								}
+							} finally {
+								if (_didIteratorError2) {
+									throw _iteratorError2;
+								}
+							}
+						}
+
+						if (!found) {
+							t.readSrc(track.src, function (d) {
+								fragments = t.parseHLSPlaylist(track.src, d);
+								if (fragments.length == 0) {
+									empty = true;
+								} else {
+									var _loop2 = function _loop2(f) {
+										if (time > f.start && time < f.end) {
+											found = true;
+											f.content().then(function (c) {
+												var entries = _mejs2.default.TrackFormatParser.webvtt.parse(c);
+												callback(entries);
+												for (var _index = 1; _index < 5; _index++) {
+													var nextNum = f.num + _index;
+													if (fragments[nextNum] !== undefined) {
+														fragments[nextNum].content();
+													}
+												}
+											});
+										}
+									};
+
+									var _iteratorNormalCompletion3 = true;
+									var _didIteratorError3 = false;
+									var _iteratorError3 = undefined;
+
+									try {
+										for (var _iterator3 = fragments[Symbol.iterator](), _step3; !(_iteratorNormalCompletion3 = (_step3 = _iterator3.next()).done); _iteratorNormalCompletion3 = true) {
+											var f = _step3.value;
+
+											_loop2(f);
+										}
+									} catch (err) {
+										_didIteratorError3 = true;
+										_iteratorError3 = err;
+									} finally {
+										try {
+											if (!_iteratorNormalCompletion3 && _iterator3.return) {
+												_iterator3.return();
+											}
+										} finally {
+											if (_didIteratorError3) {
+												throw _iteratorError3;
+											}
+										}
+									}
+								}
+							});
+						}
+						return null;
+					};
+				} else {
+					track.entries = typeof d === 'string' && /<tt\s+xml/ig.exec(d) ? _mejs2.default.TrackFormatParser.dfxp.parse(d) : _mejs2.default.TrackFormatParser.webvtt.parse(d);
+					track.getEntries = function (time, callback) {
+						return callback(track.entries);
+					};
+				}
 				track.isLoaded = true;
 				t.enableTrackButton(track);
 				t.loadNextTrack();
@@ -2701,7 +2899,7 @@ Object.assign(_player2.default.prototype, {
 		t.showSlide(0);
 	},
 	showSlide: function showSlide(index) {
-		var _this = this;
+		var _this2 = this;
 
 		var t = this;
 
@@ -2717,7 +2915,7 @@ Object.assign(_player2.default.prototype, {
 			var image = _document2.default.createElement('img');
 			image.src = url;
 			image.addEventListener('load', function () {
-				var self = _this,
+				var self = _this2,
 				    visible = (0, _dom.siblings)(self, function (el) {
 					return visible(el);
 				});
@@ -3057,7 +3255,7 @@ Object.assign(_player2.default.prototype, {
 		    mute = _document2.default.createElement('div');
 
 		mute.className = t.options.classPrefix + 'button ' + t.options.classPrefix + 'volume-button ' + t.options.classPrefix + 'mute';
-		mute.innerHTML = mode === 'horizontal' ? '<button type="button" aria-controls="' + t.id + '" title="' + muteText + '" aria-label="' + muteText + '" tabindex="0"></button>' : '<button type="button" aria-controls="' + t.id + '" title="' + muteText + '" aria-label="' + muteText + '" tabindex="0"></button>' + ('<a href="javascript:void(0);" class="' + t.options.classPrefix + 'volume-slider" ') + ('aria-label="' + _i18n2.default.t('mejs.volume-slider') + '" aria-valuemin="0" aria-valuemax="100" role="slider" ') + 'aria-orientation="vertical">' + ('<span class="' + t.options.classPrefix + 'offscreen">' + volumeControlText + '</span>') + ('<div class="' + t.options.classPrefix + 'volume-total">') + ('<div class="' + t.options.classPrefix + 'volume-current"></div>') + ('<div class="' + t.options.classPrefix + 'volume-handle"></div>') + '</div>' + '</a>';
+		mute.innerHTML = mode === 'horizontal' ? '<button type="button" aria-controls="' + t.id + '" title="' + muteText + '" aria-label="' + muteText + '" tabindex="0"></button>' : '<button type="button" aria-controls="' + t.id + '" title="' + muteText + '" aria-label="' + muteText + '" tabindex="0"></button>' + ('<a class="' + t.options.classPrefix + 'volume-slider" ') + ('aria-label="' + _i18n2.default.t('mejs.volume-slider') + '" aria-valuemin="0" aria-valuemax="100" role="slider" ') + 'aria-orientation="vertical">' + ('<span class="' + t.options.classPrefix + 'offscreen">' + volumeControlText + '</span>') + ('<div class="' + t.options.classPrefix + 'volume-total">') + ('<div class="' + t.options.classPrefix + 'volume-current"></div>') + ('<div class="' + t.options.classPrefix + 'volume-handle"></div>') + '</div>' + '</a>';
 
 		t.addControlElement(mute, 'volume');
 
@@ -3122,7 +3320,6 @@ Object.assign(_player2.default.prototype, {
 		if (mode === 'horizontal') {
 			var anchor = _document2.default.createElement('a');
 			anchor.className = t.options.classPrefix + 'horizontal-volume-slider';
-			anchor.href = 'javascript:void(0);';
 			anchor.setAttribute('aria-label', _i18n2.default.t('mejs.volume-slider'));
 			anchor.setAttribute('aria-valuemin', 0);
 			anchor.setAttribute('aria-valuemax', 100);
@@ -4413,9 +4610,9 @@ var MediaElementPlayer = function () {
 			    parentStyles = parent ? getComputedStyle(parent, null) : getComputedStyle(_document2.default.body, null),
 			    nativeWidth = function () {
 				if (t.isVideo) {
-					if (t.node.videoWidth && t.node.videoWidth > 0) {
+					if (t.node && t.node.videoWidth && t.node.videoWidth > 0) {
 						return t.node.videoWidth;
-					} else if (t.node.getAttribute('width')) {
+					} else if (t.node && t.node.getAttribute('width')) {
 						return t.node.getAttribute('width');
 					} else {
 						return t.options.defaultVideoWidth;
@@ -4426,9 +4623,9 @@ var MediaElementPlayer = function () {
 			}(),
 			    nativeHeight = function () {
 				if (t.isVideo) {
-					if (t.node.videoHeight && t.node.videoHeight > 0) {
+					if (t.node && t.node.videoHeight && t.node.videoHeight > 0) {
 						return t.node.videoHeight;
-					} else if (t.node.getAttribute('height')) {
+					} else if (t.node && t.node.getAttribute('height')) {
 						return t.node.getAttribute('height');
 					} else {
 						return t.options.defaultVideoHeight;
@@ -4446,7 +4643,7 @@ var MediaElementPlayer = function () {
 					return ratio;
 				}
 
-				if (t.node.videoWidth && t.node.videoWidth > 0 && t.node.videoHeight && t.node.videoHeight > 0) {
+				if (t.node && t.node.videoWidth && t.node.videoWidth > 0 && t.node.videoHeight && t.node.videoHeight > 0) {
 					ratio = t.height >= t.width ? t.node.videoWidth / t.node.videoHeight : t.node.videoHeight / t.node.videoWidth;
 				} else {
 					ratio = t.initialAspectRatio;
@@ -4477,7 +4674,7 @@ var MediaElementPlayer = function () {
 				newHeight = parentHeight;
 			}
 
-			if (t.getElement(t.container).parentNode.length > 0 && t.getElement(t.container).parentNode.tagName.toLowerCase() === 'body') {
+			if (t.getElement(t.container).parentNode && t.getElement(t.container).parentNode.length > 0 && t.getElement(t.container).parentNode.tagName.toLowerCase() === 'body') {
 				parentWidth = _window2.default.innerWidth || _document2.default.documentElement.clientWidth || _document2.default.body.clientWidth;
 				newHeight = _window2.default.innerHeight || _document2.default.documentElement.clientHeight || _document2.default.body.clientHeight;
 			}
@@ -4486,8 +4683,10 @@ var MediaElementPlayer = function () {
 				t.getElement(t.container).style.width = parentWidth + 'px';
 				t.getElement(t.container).style.height = newHeight + 'px';
 
-				t.node.style.width = '100%';
-				t.node.style.height = '100%';
+				if (t.node) {
+					t.node.style.width = '100%';
+					t.node.style.height = '100%';
+				}
 
 				if (t.isVideo && t.media.setSize) {
 					t.media.setSize(parentWidth, newHeight);
@@ -4898,7 +5097,7 @@ var MediaElementPlayer = function () {
 
 			loading.style.display = 'none';
 			loading.className = t.options.classPrefix + 'overlay ' + t.options.classPrefix + 'layer';
-			loading.innerHTML = '<div class="' + t.options.classPrefix + 'overlay-loading">' + ('<span class="' + t.options.classPrefix + 'overlay-loading-bg-img"></span>') + '</div>';
+			loading.innerHTML = '<div class="' + t.options.classPrefix + 'overlay-loading">' + '<div class="showbox"><div class="loader"><svg class="circular" viewBox="25 25 50 50"><circle class="path" cx="50" cy="50" r="20" fill="none" stroke-width="2" stroke-miterlimit="10"/></svg></div></div>' + '</div>';
 			layers.appendChild(loading);
 
 			error.style.display = 'none';
@@ -5027,6 +5226,10 @@ var MediaElementPlayer = function () {
 			});
 
 			t.globalKeydownCallback = function (event) {
+				if (!_document2.default.activeElement) {
+					return true;
+				}
+
 				var container = _document2.default.activeElement.closest('.' + t.options.classPrefix + 'container'),
 				    target = t.media.closest('.' + t.options.classPrefix + 'container');
 				t.hasFocus = !!(container && target && container.id === target.id);
@@ -5065,17 +5268,17 @@ var MediaElementPlayer = function () {
 	}, {
 		key: 'play',
 		value: function play() {
-			this.proxy.play();
+			return this.proxy.play();
 		}
 	}, {
 		key: 'pause',
 		value: function pause() {
-			this.proxy.pause();
+			return this.proxy.pause();
 		}
 	}, {
 		key: 'load',
 		value: function load() {
-			this.proxy.load();
+			return this.proxy.load();
 		}
 	}, {
 		key: 'setCurrentTime',
@@ -5335,6 +5538,9 @@ var DefaultPlayer = function () {
 		this.media = player.media;
 		this.isVideo = player.isVideo;
 		this.classPrefix = player.options.classPrefix;
+		if (player.options.duration) {
+			this._duration = player.options.duration;
+		}
 		this.createIframeLayer = function () {
 			return player.createIframeLayer();
 		};
@@ -5347,12 +5553,12 @@ var DefaultPlayer = function () {
 	_createClass(DefaultPlayer, [{
 		key: 'play',
 		value: function play() {
-			this.media.play();
+			return this.media.play();
 		}
 	}, {
 		key: 'pause',
 		value: function pause() {
-			this.media.pause();
+			return this.media.pause();
 		}
 	}, {
 		key: 'load',
@@ -5368,7 +5574,10 @@ var DefaultPlayer = function () {
 	}, {
 		key: 'setCurrentTime',
 		value: function setCurrentTime(time) {
+			var duration = this.getOriginalDuration();
+			if (time > duration) return false;
 			this.media.setCurrentTime(time);
+			return true;
 		}
 	}, {
 		key: 'getCurrentTime',
@@ -5376,11 +5585,21 @@ var DefaultPlayer = function () {
 			return this.media.currentTime;
 		}
 	}, {
-		key: 'getDuration',
-		value: function getDuration() {
+		key: 'getOriginalDuration',
+		value: function getOriginalDuration() {
 			var duration = this.media.getDuration();
 			if (duration === Infinity && this.media.seekable && this.media.seekable.length) {
 				duration = this.media.seekable.end(0);
+			}
+			return duration;
+		}
+	}, {
+		key: 'getDuration',
+		value: function getDuration() {
+			var duration = this.getOriginalDuration();
+			if (this._duration) {
+				var d = this._duration();
+				if (d) duration = d;
 			}
 			return duration;
 		}
@@ -7799,6 +8018,7 @@ function visible(elem) {
 
 function ajax(url, dataType, success, error) {
 	var xhr = _window2.default.XMLHttpRequest ? new XMLHttpRequest() : new ActiveXObject('Microsoft.XMLHTTP');
+	xhr.withCredentials = true;
 
 	var type = 'application/x-www-form-urlencoded; charset=UTF-8',
 	    completed = false,

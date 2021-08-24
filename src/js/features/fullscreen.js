@@ -200,6 +200,8 @@ Object.assign(MediaElementPlayer.prototype, {
 			return;
 		}
 
+		t.getElement(t.container).dispatchEvent(createEvent('enteringfullscreen', t.getElement(t.container)));
+
 		// iOS allows playing fullscreen ONLY on `video` tag, so check if the source can go fullscreen on iOS
 		// and if the player can play the current source
 		if (t.options.useFakeFullscreen === false && (Features.IS_IOS || Features.IS_SAFARI) && Features.HAS_IOS_FULLSCREEN &&
@@ -207,6 +209,24 @@ Object.assign(MediaElementPlayer.prototype, {
 			t.media.originalNode.canPlayType(getTypeFromFile(t.media.getSrc()))) {
 			t.media.originalNode.webkitEnterFullscreen();
 			return;
+		}
+
+		if (Features.IS_ANDROID) {
+			// https://stackoverflow.com/a/24403519
+			var myVideo = t.media.originalNode;
+			if (typeof(myVideo.webkitEnterFullscreen) != "undefined") {
+				// This is for Android Stock.
+				myVideo.webkitEnterFullscreen();
+				return;
+			} else if (typeof(myVideo.webkitRequestFullscreen)  != "undefined") {
+				// This is for Chrome.
+				myVideo.webkitRequestFullscreen();
+				return;
+			} else if (typeof(myVideo.mozRequestFullScreen)  != "undefined") {
+				myVideo.mozRequestFullScreen();
+				return;
+			}
+
 		}
 
 		// set it to not show scroll bars so 100% will work
@@ -292,10 +312,10 @@ Object.assign(MediaElementPlayer.prototype, {
 			captionText = t.getElement(t.container).querySelector(`.${t.options.classPrefix}captions-text`)
 		;
 		if (captionText) {
-			captionText.style.fontSize = `${(zoomFactor * 100)}%`;
+			captionText.style.fontSize = `${(zoomFactor * 50)}%`;
 			captionText.style.lineHeight = 'normal';
-			t.getElement(t.container).querySelector(`.${t.options.classPrefix}captions-position`).style.bottom =
-				`${(((screen.height - t.normalHeight) / 2) - (t.getElement(t.controls).offsetHeight / 2) + zoomFactor + 15)}px`;
+			// t.getElement(t.container).querySelector(`.${t.options.classPrefix}captions-position`).style.bottom =
+			// 	`${(((screen.height - t.normalHeight) / 2) - (t.getElement(t.controls).offsetHeight / 2) + zoomFactor + 15)}px`;
 		}
 		const event = createEvent('enteredfullscreen', t.getElement(t.container));
 		t.getElement(t.container).dispatchEvent(event);

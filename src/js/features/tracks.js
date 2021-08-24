@@ -406,6 +406,61 @@ Object.assign(MediaElementPlayer.prototype, {
 			t.checkForTracks();
 		}
 	},
+	isDataURI(url) {
+		return url.match(/^data:(?:.+?\/.+?)?(?:;.+?=.+?)*(?:;base64)?,.*$/);
+	},
+	b64DecodeUnicode(str) {
+		// Going backwards: from bytestream, to percent-encoding, to original string.
+		return decodeURIComponent(atob(str).split('').map(function(c) {
+			return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+		}).join(''));
+	},
+	readSrc (src, callback) {
+		if (this.isDataURI(src)) {
+			const byteString = this.b64DecodeUnicode(src.split(',')[1]);
+			callback(byteString);
+		} else {
+			ajax(src, 'text', callback);
+		}
+	},
+
+	parseHLSPlaylist(srcUrl, src) {
+		const parentUrl = srcUrl.substring(0, srcUrl.lastIndexOf( "/" ) + 1);
+		const fragments = [];
+		const lines = src.split("\n");
+		let current = 0;
+		let num = 0;
+		let fragment = {start: current};
+		for (const l of lines) {
+			const m = l.match('#EXTINF:([0-9\.]+),');
+			if (m) {
+				fragment.num = num;
+				fragment.end = fragment.start + parseFloat(m[1]);
+				num++;
+			}
+			if (l.match('^[^#]')) {
+				fragment.name = l;
+				fragment.src = parentUrl + fragment.name;
+			}
+			if (fragment.name !== undefined) {
+				fragments.push(fragment);
+				current = fragment.end;
+				fragment.content = function(f) {
+					let prom = null;
+					return function() {
+						if (prom === null) {
+							prom = new Promise(function(resolve) {
+								ajax(f.src, 'text', resolve);
+							});
+						}
+						return prom;
+					}
+				}(fragment);
+				fragment = {start: current};
+			}
+		}
+		return fragments;
+	},
 
 	/**
 	 *
@@ -418,10 +473,61 @@ Object.assign(MediaElementPlayer.prototype, {
 		;
 
 		if (track !== undefined && (track.src !== undefined || track.src !== "")) {
-			ajax(track.src, 'text', (d) => {
-				track.entries = typeof d === 'string' && (/<tt\s+xml/ig).exec(d) ?
-					mejs.TrackFormatParser.dfxp.parse(d) : mejs.TrackFormatParser.webvtt.parse(d);
-
+			this.readSrc(track.src, (d) => {
+				if (track.src.match(/\.m3u8/)) {
+					let fragments = this.parseHLSPlaylist(track.src, d);
+					let empty = false;
+					track.getEntries = function(time, callback) {
+						if (empty) return;
+						let found = false;
+						for (const f of fragments) {
+							if (time > f.start && time < f.end) {
+								found = true;
+								f.content().then(function(c) {
+									const entries = mejs.TrackFormatParser.webvtt.parse(c)
+									callback(entries);
+									for (let index = 1; index < 5; index++) {
+										const nextNum = f.num + index;
+										if (fragments[nextNum] !== undefined) {
+											fragments[nextNum].content();
+										}
+									}
+								});
+							}
+						}
+						if (!found) {
+							t.readSrc(track.src, (d) => {
+								fragments = t.parseHLSPlaylist(track.src, d);
+								if (fragments.length == 0) {
+									empty = true;
+								} else {
+									for (const f of fragments) {
+										if (time > f.start && time < f.end) {
+											found = true;
+											f.content().then(function(c) {
+												const entries = mejs.TrackFormatParser.webvtt.parse(c)
+												callback(entries);
+												for (let index = 1; index < 5; index++) {
+													const nextNum = f.num + index;
+													if (fragments[nextNum] !== undefined) {
+														fragments[nextNum].content();
+													}
+												}
+											});
+										}
+									}
+								}
+							});
+						}
+						return null;
+					}
+				} else {
+					track.entries = typeof d === 'string' && (/<tt\s+xml/ig).exec(d) ?
+						mejs.TrackFormatParser.dfxp.parse(d) : mejs.TrackFormatParser.webvtt.parse(d);
+					track.getEntries = function(time, callback) {
+						return callback(track.entries);
+					}
+				}
 				track.isLoaded = true;
 				t.enableTrackButton(track);
 				t.loadNextTrack();
