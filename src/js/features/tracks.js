@@ -449,7 +449,7 @@ Object.assign(MediaElementPlayer.prototype, {
 					let prom = null;
 					return function() {
 						if (prom === null) {
-							prom = new Promise(function(resolve, reject) {
+							prom = new Promise(function(resolve) {
 								ajax(f.src, 'text', resolve);
 							});
 						}
@@ -686,22 +686,6 @@ Object.assign(MediaElementPlayer.prototype, {
 		;
 
 		if (track !== null && track.isLoaded) {
-<<<<<<< HEAD
-			track.getEntries(t.media.currentTime, function(entries) {
-				let entry = null;
-				let i = t.searchTrackPosition(entries, t.media.currentTime);
-				if (i > -1) entry = entries[i];
-				if (entry !== null) {
-					// Set the line before the timecode as a class so the cue can be targeted if needed
-					t.captionsText.innerHTML = sanitize(entry.text);
-					t.captionsText.className = `${t.options.classPrefix}captions-text ${(entry.identifier || '')}`;
-					t.captions.style.display = '';
-					t.captions.style.height = '0px';
-					return; // exit out if one is visible;
-				}
-				t.captions.style.display = 'none';
-			});
-=======
 			let i = t.searchTrackPosition(track.entries, t.media.currentTime);
 			if (i > -1) {
 				// Set the line before the timecode as a class so the cue can be targeted if needed
@@ -715,7 +699,6 @@ Object.assign(MediaElementPlayer.prototype, {
 				return; // exit out if one is visible;
 			}
 			t.captions.style.display = 'none';
->>>>>>> 4.2.16
 		} else {
 			t.captions.style.display = 'none';
 		}

@@ -1575,7 +1575,7 @@ class MediaElementPlayer {
 		loading.style.display = 'none'; // start out hidden
 		loading.className = `${t.options.classPrefix}overlay ${t.options.classPrefix}layer`;
 		loading.innerHTML = `<div class="${t.options.classPrefix}overlay-loading">` +
-			`<span class="${t.options.classPrefix}overlay-loading-bg-img"></span>` +
+			`<div class="showbox"><div class="loader"><svg class="circular" viewBox="25 25 50 50"><circle class="path" cx="50" cy="50" r="20" fill="none" stroke-width="2" stroke-miterlimit="10"/></svg></div></div>` +
 			`</div>`;
 		layers.appendChild(loading);
 

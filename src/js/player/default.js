@@ -11,6 +11,9 @@ export default class DefaultPlayer {
 		this.media = player.media;
 		this.isVideo = player.isVideo;
 		this.classPrefix = player.options.classPrefix;
+		if (player.options.duration) {
+			this._duration = player.options.duration;
+		}
 		this.createIframeLayer = () => player.createIframeLayer();
 		this.setPoster = (url) => player.setPoster(url);
 		return this;
@@ -87,17 +90,30 @@ export default class DefaultPlayer {
 	}
 
 	setCurrentTime (time) {
+		let duration = this.getOriginalDuration();
+		if (time > duration) return false;
 		this.media.setCurrentTime(time);
+		return true;
 	}
 
 	getCurrentTime () {
 		return this.media.currentTime;
 	}
 
-	getDuration () {
+	getOriginalDuration () {
 		let duration = this.media.getDuration();
 		if (duration === Infinity && this.media.seekable && this.media.seekable.length) {
 			duration = this.media.seekable.end(0);
+		}
+		return duration;
+
+	}
+
+	getDuration () {
+		let duration = this.getOriginalDuration();
+		if (this._duration) {
+			const d = this._duration();
+			if (d) duration = d;
 		}
 		return duration;
 	}
